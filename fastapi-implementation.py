@@ -1,36 +1,24 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import os
-import uvicorn
-from preprocess import main as preprocessing_main, load_config
+from s3_utils import S3Utils  # Assuming this is your shared S3 utility module
+import configparser
 
-app = FastAPI()
+# Load config file (same config used in your real system)
+config = configparser.ConfigParser()
+config.read('config.ini')  # or wherever your actual config is
 
-class InputPath(BaseModel):
-    input_directory: str
+# Instantiate the S3 Utility
+s3 = S3Utils(config)
 
-@app.post("/process-data/")
-def process_data(input_path: InputPath):
-    try:
-        # Load config
-        config_path = os.path.join(os.path.dirname(__file__), "configs", "config.yml")
-        config = load_config(config_path)
+# Set a prefix (folder path in the bucket)
+prefix = "your/input/directory/prefix/"  # e.g., "data/assets/"
 
-        # Override input directory from user input
-        config["paths"]["data_directory"] = input_path.input_directory
+# Try to list the files in the given S3 path
+files = s3.list_objects(prefix)
 
-        # Optionally: Write the modified config back or use it in preprocessing functions
-        # If your preprocess.main() does not take config as input,
-        # you may need to refactor it to do so for dynamic handling.
+# Print out the contents
+print("Files found in S3 path:")
+for f in files:
+    print(f)
 
-        preprocessing_main()  # Assuming it uses updated global config
-
-        return {"status": "success", "message": "Data processing completed."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-def main():
-    uvicorn.run("api:app", host="0.0.0.0", port=8080, reload=True)
-
-if __name__ == "__main__":
-    main()
+# Optional: Assert or log if directory is empty
+if not files:
+    print("No files found or unable to access path.")
