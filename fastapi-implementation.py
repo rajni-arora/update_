@@ -88,8 +88,10 @@ class DataProcessor:
         self.config = None
         self.table_meta = {}
         self.meta_values = []
+        self.knowledge_base_entries = []
         self.column_docs = []
         self.val_docs = []
+        self.kb_docs = []
         
         # Dataframes
         self.df = None       # Main dataframe
@@ -115,7 +117,8 @@ class DataProcessor:
                     'metadata': 'assets/meta',
                     'values': 'assets/values',
                     'output': 'output/data.csv',
-                    'combined_output': 'output/combined_data.csv'
+                    'combined_output': 'output/combined_data.csv',
+                    'kb_directory': 'assets/knowledge_base_data/'
                 }
             }
             # Ensure directory exists
@@ -132,6 +135,7 @@ class DataProcessor:
         os.makedirs(self.config['paths']['metadata'], exist_ok=True)
         os.makedirs(self.config['paths']['values'], exist_ok=True)
         os.makedirs(os.path.dirname(self.config['paths']['output']), exist_ok=True)
+        os.makedirs(self.config['paths']['kb_directory'], exist_ok=True)
     
     def read_metadata(self):
         """Read metadata from JSON files"""
@@ -162,6 +166,64 @@ class DataProcessor:
                     self.meta_values.append(data)
                     print(f"Loaded values for table: {data['table']}")
         return self.meta_values
+    
+    def read_knowledge_base(self):
+        """Read knowledge base data from JSON files"""
+        kb_path = self.config['paths'].get('kb_directory', 'assets/knowledge_base_data/')
+        
+        # Check if directory exists
+        if not os.path.exists(kb_path):
+            print(f"Knowledge base directory {kb_path} not found")
+            return []
+        
+        # Read knowledge base files
+        for filekey in os.listdir(kb_path):
+            if not filekey.endswith('.json'):
+                continue
+                
+            with open(os.path.join(kb_path, filekey), 'r') as f:
+                try:
+                    data = json.load(f)
+                    # Process the knowledge base entries
+                    for key, entry in data.items():
+                        if isinstance(entry, dict) and 'description' in entry:
+                            # Create a knowledge base entry
+                            kb_entry = {
+                                'title': key,
+                                'description': entry.get('description', ''),
+                                'example': entry.get('example', '')
+                            }
+                            self.knowledge_base_entries.append(kb_entry)
+                    print(f"Loaded knowledge base data from: {filekey}")
+                except json.JSONDecodeError:
+                    print(f"Error parsing JSON in file: {filekey}")
+        
+        return self.knowledge_base_entries
+    
+    def process_knowledge_base(self):
+        """Process knowledge base entries into documents"""
+        self.kb_docs = []
+        
+        for entry in self.knowledge_base_entries:
+            title = entry.get('title', '')
+            description = entry.get('description', '')
+            
+            # Create content with title and description
+            content = f"**{title}**\n{description}"
+            
+            # Create document
+            doc = Document(
+                page_content=content,
+                metadata={
+                    'title': title,
+                    'type': 'knowledge'
+                }
+            )
+            
+            self.kb_docs.append(doc)
+            
+        print(f"Processed {len(self.kb_docs)} knowledge base entries into documents")
+        return self.kb_docs
     
     def column_to_document(self, column_info: ColumnInfo, table_info: TableInfo):
         """Convert column metadata to document format"""
@@ -255,6 +317,12 @@ class DataProcessor:
             metadata_list.append(str(doc.metadata))
             content_list.append(doc.page_content)
             metadata_type_list.append('table_values')
+            
+        # Add knowledge base entries
+        for doc in self.kb_docs:
+            metadata_list.append(str(doc.metadata))
+            content_list.append(doc.page_content)
+            metadata_type_list.append('knowledge')
         
         # Create main DataFrame (df)
         self.df = pd.DataFrame({
@@ -290,11 +358,19 @@ class DataProcessor:
                             table_part = parts[1].split(":")[1].split(",")[0].strip()
                             table_name = table_part.replace("'", "").replace('"', '').strip()
                         else:
-                            table_name = "unknown"
+                            table_name = ""
                     else:
-                        table_name = "unknown"
+                        table_name = ""
+            elif "'title':" in meta_str:
+                # For knowledge base entries
+                parts = meta_str.split("'title':")
+                if len(parts) > 1:
+                    title_part = parts[1].split(",")[0].strip()
+                    table_name = title_part.replace("'", "").replace('"', '').strip()
+                else:
+                    table_name = ""
             else:
-                table_name = "unknown"
+                table_name = ""
             
             table_names.append(table_name)
         
@@ -312,6 +388,9 @@ class DataProcessor:
                 # Get the description
                 description = self.table_descriptions.get(table_name, '')
                 business_descriptions.append(description)
+            elif meta_type == 'knowledge':
+                # For knowledge base entries, leave business description empty
+                business_descriptions.append('')
             else:
                 # For values, use empty string
                 business_descriptions.append('')
@@ -350,8 +429,10 @@ class DataProcessor:
         self.create_directories()
         self.read_metadata()
         self.read_values()
+        self.read_knowledge_base()
         self.process_column_metadata()
         self.process_values()
+        self.process_knowledge_base()
         return self.create_dataframes()
     
     def run(self, config_path: str = "configs/config.yml"):
