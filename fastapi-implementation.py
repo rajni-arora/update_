@@ -90,7 +90,17 @@ class DataProcessor:
         self.meta_values = []
         self.column_docs = []
         self.val_docs = []
-        self.df = None
+        
+        # Dataframes
+        self.df = None       # Main dataframe
+        self.df1 = None      # Content dataframe
+        self.df2 = None      # Meta values dataframe
+        self.df3 = None      # Metadata type dataframe
+        self.df4 = None      # Table name dataframe
+        self.df5 = None      # Business description dataframe
+        
+        # Raw table descriptions
+        self.table_descriptions = {}
         
     def load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file"""
@@ -104,7 +114,8 @@ class DataProcessor:
                 'paths': {
                     'metadata': 'assets/meta',
                     'values': 'assets/values',
-                    'output': 'output/data.csv'
+                    'output': 'output/data.csv',
+                    'combined_output': 'output/combined_data.csv'
                 }
             }
             # Ensure directory exists
@@ -134,6 +145,8 @@ class DataProcessor:
                 if 'name' not in data:
                     data['name'] = table_name
                 self.table_meta[table_name] = TableInfo().from_dict(data)
+                # Save the description for later use in df5
+                self.table_descriptions[table_name] = data.get('description', '')
                 print(f"Loaded metadata for table: {table_name}")
         return self.table_meta
     
@@ -168,20 +181,26 @@ class DataProcessor:
         )
         return doc
     
-    def value_document(self, table_name, column_name, value):
+    def value_document(self, table_name, column_name, value, dataset=None):
         """Convert value to document format"""
         # Convert value to string if necessary
         if not isinstance(value, str):
             value_str = str(value)
         else:
             value_str = value
+        
+        metadata = {
+            'table': table_name,
+            'column': column_name
+        }
+        
+        # Add dataset if provided
+        if dataset:
+            metadata['dataset'] = dataset
             
         doc = Document(
             page_content=value_str,
-            metadata={
-                'table': table_name,
-                'column': column_name
-            }
+            metadata=metadata
         )
         return doc
     
@@ -211,14 +230,16 @@ class DataProcessor:
         """Process values into documents"""
         self.val_docs = []
         for vals in self.meta_values:
+            table_name = vals.get('table', '')
+            dataset_name = vals.get('dataset', '')
             for col in vals.get('values', {}):
                 for v in vals['values'][col]:
-                    self.val_docs.append(self.value_document(vals['table'], col, v))
+                    self.val_docs.append(self.value_document(table_name, col, v, dataset_name))
         return self.val_docs
     
-    def create_dataframe(self):
-        """Create a pandas DataFrame from processed documents"""
-        # Create lists for each column
+    def create_dataframes(self):
+        """Create all required dataframes"""
+        # Create lists for each column in main dataframe
         metadata_list = []
         content_list = []
         metadata_type_list = []
@@ -235,35 +256,103 @@ class DataProcessor:
             content_list.append(doc.page_content)
             metadata_type_list.append('table_values')
         
-        # Create DataFrame
+        # Create main DataFrame (df)
         self.df = pd.DataFrame({
             'metadata': metadata_list,
             'content': content_list,
             'metadata_type': metadata_type_list
         })
         
-        print(f"Created DataFrame with {len(self.df)} rows")
-        return self.df
+        # Create df1 (Content dataframe)
+        self.df1 = pd.DataFrame({'content': content_list})
+        
+        # Create df2 (Meta values dataframe)
+        self.df2 = pd.DataFrame({'meta_values': metadata_list})
+        
+        # Create df3 (Metadata type dataframe)
+        self.df3 = pd.DataFrame({'metadata_type': metadata_type_list})
+        
+        # Create df4 (Table name dataframe)
+        # Extract table names from metadata strings using string parsing
+        table_names = []
+        for meta_str in metadata_list:
+            # Find the table value in the metadata string
+            if "'table':" in meta_str or "'table'" in meta_str:
+                # Simple string parsing to extract table name
+                parts = meta_str.split("'table':")
+                if len(parts) > 1:
+                    table_part = parts[1].split(",")[0].strip()
+                    table_name = table_part.replace("'", "").replace('"', '').strip()
+                else:
+                    parts = meta_str.split("'table'")
+                    if len(parts) > 1:
+                        if ":" in parts[1]:
+                            table_part = parts[1].split(":")[1].split(",")[0].strip()
+                            table_name = table_part.replace("'", "").replace('"', '').strip()
+                        else:
+                            table_name = "unknown"
+                    else:
+                        table_name = "unknown"
+            else:
+                table_name = "unknown"
+            
+            table_names.append(table_name)
+        
+        self.df4 = pd.DataFrame({'table_name': table_names})
+        
+        # Create df5 (Business description dataframe)
+        business_descriptions = []
+        
+        for i, meta_type in enumerate(metadata_type_list):
+            if meta_type == 'table_meta':
+                # Extract table name from metadata
+                meta_str = metadata_list[i]
+                table_name = table_names[i]  # Use the table name we already extracted above
+                
+                # Get the description
+                description = self.table_descriptions.get(table_name, '')
+                business_descriptions.append(description)
+            else:
+                # For values, use empty string
+                business_descriptions.append('')
+        
+        self.df5 = pd.DataFrame({'business_description': business_descriptions})
+        
+        print(f"Created all dataframes. Main DataFrame has {len(self.df)} rows")
+        return self.df, self.df1, self.df2, self.df3, self.df4, self.df5
     
     def to_csv(self):
         """Export DataFrame to CSV"""
         if self.df is None:
-            print("DataFrame is not created yet. Call create_dataframe() first.")
+            print("DataFrames are not created yet. Call create_dataframes() first.")
             return False
             
+        # Export main dataframe
         output_path = self.config['paths']['output']
         self.df.to_csv(output_path, index=False)
-        print(f"Data exported successfully to {output_path}")
+        print(f"Main data exported to {output_path}")
+        
+        # Export combined dataframe
+        combined_output_path = self.config['paths'].get('combined_output', 'output/combined_data.csv')
+        
+        # Combine all dataframes horizontally
+        combined_df = pd.concat([
+            self.df1, self.df2, self.df3, self.df4, self.df5
+        ], axis=1)
+        
+        combined_df.to_csv(combined_output_path, index=False)
+        print(f"Combined data exported to {combined_output_path}")
+        
         return True
     
     def process_data(self):
-        """Process all data and create DataFrame"""
+        """Process all data and create dataframes"""
         self.create_directories()
         self.read_metadata()
         self.read_values()
         self.process_column_metadata()
         self.process_values()
-        return self.create_dataframe()
+        return self.create_dataframes()
     
     def run(self, config_path: str = "configs/config.yml"):
         """Run the entire data processing pipeline"""
