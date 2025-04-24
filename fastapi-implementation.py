@@ -1,72 +1,23 @@
-# 1. First, update your config.yml file with the exact path:
+import os
+from pathlib import Path
 
-paths:
-  metadata: "assets/meta"
-  values: "assets/values"
-  output: "output/"
-  kb_directory: "assets/knowledge_base_data/"
-  viewshot_input: "C:/Users/sn1009/Downloads/gold_pairs_example.xlsx"  # Update with the exact path from your screenshot
-  viewshot_dataset_name: "Gold_Dataset"  # Update with the dataset name shown in your screenshot
+def upload_all_files_to_s3(s3, source_dir_path, destination_dir_path):
+    """
+    Upload all files from local source_dir_path to S3 destination_dir_path.
 
-# 2. Modify the process_viewshot_data method to handle the path issue better:
+    :param s3: An instance of the S3Utils class with the upload_file method.
+    :param source_dir_path: Local path to the directory containing files to upload.
+    :param destination_dir_path: Destination path in S3 where files should be uploaded.
+    """
+    source_dir = Path(source_dir_path)
+    destination_dir = Path(destination_dir_path)
 
-def process_viewshot_data(self):
-    """Process ViewShot data from Excel file"""
-    # Check if ViewShot utilities are available
-    if few_shot.load_questions_excel_save_csv is None or few_shot.load_examples_csv is None:
-        print("ViewShot utilities not available. Skipping ViewShot processing.")
-        return []
-    
-    # Get ViewShot input path from config
-    viewshot_path = self.config['paths'].get('viewshot_input', '')
-    dataset_name = self.config['paths'].get('viewshot_dataset_name', 'ViewShot_Dataset')
-    
-    print(f"Looking for ViewShot file at: {viewshot_path}")
-    
-    if not viewshot_path:
-        print("ViewShot input path not specified in config")
-        return []
-        
-    if not os.path.exists(viewshot_path):
-        print(f"ViewShot input file not found at configured path: {viewshot_path}")
-        # Try alternative path
-        alt_path = "C:/Users/sn1009/Downloads/gold_pairs_example.xlsx"
-        if os.path.exists(alt_path):
-            print(f"Found file at alternative path: {alt_path}")
-            viewshot_path = alt_path
-        else:
-            print(f"File not found at alternative path either: {alt_path}")
-            # List files in downloads directory to help diagnose
-            try:
-                download_dir = "C:/Users/sn1009/Downloads/"
-                if os.path.exists(download_dir):
-                    print(f"Files in Downloads directory:")
-                    for file in os.listdir(download_dir):
-                        if file.endswith('.xlsx'):
-                            print(f"  - {file}")
-            except Exception as e:
-                print(f"Error listing files: {str(e)}")
-            return []
-    
-    try:
-        # Process the Excel file through ViewShot utilities
-        print(f"Processing ViewShot data from: {viewshot_path}")
-        viewshot_df = few_shot.load_questions_excel_save_csv(viewshot_path, dataset_name)
-        viewshot_list = few_shot.load_examples_csv(viewshot_df)
-        
-        # Convert ViewShot examples to documents
-        self.viewshot_docs = []
-        for item in viewshot_list:
-            # Create document from ViewShot item
-            doc = Document(
-                page_content=f"\"page_content\": {{{item.page_content}}}",
-                metadata=item.metadata
-            )
-            self.viewshot_docs.append(doc)
-        
-        print(f"Processed {len(self.viewshot_docs)} ViewShot examples")
-        return self.viewshot_docs
-        
-    except Exception as e:
-        print(f"Error processing ViewShot data: {str(e)}")
-        return []
+    # Check if source_dir exists
+    if not source_dir.exists() or not source_dir.is_dir():
+        raise ValueError(f"Source directory '{source_dir}' does not exist or is not a directory.")
+
+    for file_path in source_dir.iterdir():
+        if file_path.is_file():
+            destination_path = destination_dir / file_path.name
+            print(f"Uploading {file_path} to {destination_path}")
+            s3.upload_file(str(file_path), str(destination_path))
