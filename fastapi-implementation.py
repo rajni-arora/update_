@@ -1,23 +1,36 @@
-import os
-from pathlib import Path
+def to_csv(self):
+    combined_output_path = f"{output_path}/preprocessed_{timestamp}.csv"
 
-def upload_all_files_to_s3(s3, source_dir_path, destination_dir_path):
-    """
-    Upload all files from local source_dir_path to S3 destination_dir_path.
+    # Combine all dataframes horizontally
+    combined_df = pd.concat([
+        self.df1, self.df2, self.df3, self.df4, self.df5
+    ], axis=1)
 
-    :param s3: An instance of the S3Utils class with the upload_file method.
-    :param source_dir_path: Local path to the directory containing files to upload.
-    :param destination_dir_path: Destination path in S3 where files should be uploaded.
-    """
-    source_dir = Path(source_dir_path)
-    destination_dir = Path(destination_dir_path)
+    # Add static values
+    combined_df['usecase_id'] = '1082'
+    combined_df['usecase_name'] = 'gleam'
+    combined_df['dbname'] = 'cstonedb3'
+    combined_df['metadata_id'] = [str(uuid.uuid4()) for _ in range(len(combined_df))]
 
-    # Check if source_dir exists
-    if not source_dir.exists() or not source_dir.is_dir():
-        raise ValueError(f"Source directory '{source_dir}' does not exist or is not a directory.")
+    # Rearrange columns so that df1 and df2 come after metadata_id
+    df1_cols = self.df1.columns.tolist()
+    df2_cols = self.df2.columns.tolist()
 
-    for file_path in source_dir.iterdir():
-        if file_path.is_file():
-            destination_path = destination_dir / file_path.name
-            print(f"Uploading {file_path} to {destination_path}")
-            s3.upload_file(str(file_path), str(destination_path))
+    cols = combined_df.columns.tolist()
+
+    # Remove df1 and df2 cols from current position
+    for col in df1_cols + df2_cols:
+        if col in cols:
+            cols.remove(col)
+
+    # Find the index of metadata_id
+    metadata_index = cols.index('metadata_id') + 1
+
+    # Insert df1 and df2 cols (preserving order) after metadata_id
+    cols = cols[:metadata_index] + df1_cols + df2_cols + cols[metadata_index:]
+
+    # Reorder the DataFrame
+    combined_df = combined_df[cols]
+
+    # Save to CSV
+    combined_df.to_csv(combined_output_path, index=False)
