@@ -1,72 +1,52 @@
-I'll edit the function to separate data into two CSV files based on the "metadata_type" column. Let me create a more focused update:
+Looking at your code, I can see you're implementing an archiving functionality using S3 to move objects from an input path to archive folders. You want to add a timestamp to the files before moving them to the target folders.
 
-```python
-def to_csv(self):
-    """Export DataFrame to CSV"""
-    if self.df is None:
-        print("DataFrames are not created yet. Call create_dataframes() first.")
-        return False
-        
-    # Export main dataframe
-    output_path = self.config['paths'].get('output', 'output/')
-    
-    # Create paths for schema and knowledge files
-    schema_output_path = f"{output_path}schema.csv"
-    knowledge_output_path = f"{output_path}knowledge.csv"
-    
-    # Separate data based on metadata_type
-    knowledge_df = combined_df[combined_df['metadata_type'] == 'knowledge']
-    schema_df = combined_df[combined_df['metadata_type'].isin(['few_shot', 'meta', 'values'])]
-    
-    # Export schema dataframe
-    schema_df.to_csv(schema_output_path, index=False, sep='|')
-    print(f"Schema data exported to: {schema_output_path}")
-    
-    # Export knowledge dataframe
-    knowledge_df.to_csv(knowledge_output_path, index=False, sep='|')
-    print(f"Knowledge data exported to: {knowledge_output_path}")
-    
-    return True
-```
-
-Here are the specific changes needed:
+Here's how we can add a timestamp to the files before moving them:
 
 Old lines:
 ```python
-# Export combined dataframe
-from datetime import import datetime
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#output_file = os.path.join(output_path, f"schema{timestamp}.csv")
-combined_output_path = f"{output_path}preprocessed_{timestamp}.csv"
+#Archive meta
+s3_archive_folder_meta = config['s3_file_paths']['archive_data_path_meta']
+s3.move_objects(input_path_meta, s3_archive_folder_meta)
 
-# ... reordering code ...
+#Archive values
+s3_archive_folder_values = config['s3_file_paths']['archive_data_path_values']
+s3.move_objects(input_path_values, s3_archive_folder_values)
 
-combined_df.to_csv(combined_output_path, index=False, sep='|')
-print(f"Combined data exported to: {combined_output_path}")
+#Archive Knowledge
+s3_archive_folder_knowledge = config['s3_file_paths']['archive_data_path_Knowledge']
+s3.move_objects(s3_knowledge_path, s3_archive_folder_knowledge)
+
+#Archive Others/miscellineous
+s3_archive_folder_few_shot = config['s3_file_paths']['archive_data_path_Others']
+s3.move_objects(input_path_few_shot, s3_archive_folder_few_shot)
 ```
 
 New lines:
 ```python
-# Create paths for schema and knowledge files
-schema_output_path = f"{output_path}schema.csv"
-knowledge_output_path = f"{output_path}knowledge.csv"
+# Generate timestamp for archiving
+from datetime import datetime
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-# Separate data based on metadata_type
-knowledge_df = combined_df[combined_df['metadata_type'] == 'knowledge']
-schema_df = combined_df[combined_df['metadata_type'].isin(['few_shot', 'meta', 'values'])]
+#Archive meta
+s3_archive_folder_meta = config['s3_file_paths']['archive_data_path_meta']
+s3.move_objects(input_path_meta, f"{s3_archive_folder_meta}/{timestamp}")
 
-# Export schema dataframe
-schema_df.to_csv(schema_output_path, index=False, sep='|')
-print(f"Schema data exported to: {schema_output_path}")
+#Archive values
+s3_archive_folder_values = config['s3_file_paths']['archive_data_path_values']
+s3.move_objects(input_path_values, f"{s3_archive_folder_values}/{timestamp}")
 
-# Export knowledge dataframe
-knowledge_df.to_csv(knowledge_output_path, index=False, sep='|')
-print(f"Knowledge data exported to: {knowledge_output_path}")
+#Archive Knowledge
+s3_archive_folder_knowledge = config['s3_file_paths']['archive_data_path_Knowledge']
+s3.move_objects(s3_knowledge_path, f"{s3_archive_folder_knowledge}/{timestamp}")
+
+#Archive Others/miscellineous
+s3_archive_folder_few_shot = config['s3_file_paths']['archive_data_path_Others']
+s3.move_objects(input_path_few_shot, f"{s3_archive_folder_few_shot}/{timestamp}")
 ```
 
-This will:
-1. Create two fixed filenames: "schema.csv" and "knowledge.csv" in the output directory
-2. Filter the combined dataframe by "metadata_type" values
-3. Save "knowledge" data to knowledge.csv
-4. Save "few_shot", "meta", and "values" data to schema.csv
-5. Use the '|' separator as in your original code​​​​​​​​​​​​​​​​
+This change:
+1. Adds an import for datetime at the beginning of the relevant section
+2. Creates a timestamp variable in the format "YYYYMMDD_HHMMSS"
+3. Modifies each target path to include the timestamp as a subfolder, which effectively groups files archived at the same time together
+
+The timestamp format matches what's shown in your terminal output for the schema and knowledge data files.​​​​​​​​​​​​​​​​
