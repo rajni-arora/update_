@@ -1,36 +1,72 @@
+I'll edit the function to separate data into two CSV files based on the "metadata_type" column. Let me create a more focused update:
+
+```python
 def to_csv(self):
-    combined_output_path = f"{output_path}/preprocessed_{timestamp}.csv"
+    """Export DataFrame to CSV"""
+    if self.df is None:
+        print("DataFrames are not created yet. Call create_dataframes() first.")
+        return False
+        
+    # Export main dataframe
+    output_path = self.config['paths'].get('output', 'output/')
+    
+    # Create paths for schema and knowledge files
+    schema_output_path = f"{output_path}schema.csv"
+    knowledge_output_path = f"{output_path}knowledge.csv"
+    
+    # Separate data based on metadata_type
+    knowledge_df = combined_df[combined_df['metadata_type'] == 'knowledge']
+    schema_df = combined_df[combined_df['metadata_type'].isin(['few_shot', 'meta', 'values'])]
+    
+    # Export schema dataframe
+    schema_df.to_csv(schema_output_path, index=False, sep='|')
+    print(f"Schema data exported to: {schema_output_path}")
+    
+    # Export knowledge dataframe
+    knowledge_df.to_csv(knowledge_output_path, index=False, sep='|')
+    print(f"Knowledge data exported to: {knowledge_output_path}")
+    
+    return True
+```
 
-    # Combine all dataframes horizontally
-    combined_df = pd.concat([
-        self.df1, self.df2, self.df3, self.df4, self.df5
-    ], axis=1)
+Here are the specific changes needed:
 
-    # Add static values
-    combined_df['usecase_id'] = '1082'
-    combined_df['usecase_name'] = 'gleam'
-    combined_df['dbname'] = 'cstonedb3'
-    combined_df['metadata_id'] = [str(uuid.uuid4()) for _ in range(len(combined_df))]
+Old lines:
+```python
+# Export combined dataframe
+from datetime import import datetime
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+#output_file = os.path.join(output_path, f"schema{timestamp}.csv")
+combined_output_path = f"{output_path}preprocessed_{timestamp}.csv"
 
-    # Rearrange columns so that df1 and df2 come after metadata_id
-    df1_cols = self.df1.columns.tolist()
-    df2_cols = self.df2.columns.tolist()
+# ... reordering code ...
 
-    cols = combined_df.columns.tolist()
+combined_df.to_csv(combined_output_path, index=False, sep='|')
+print(f"Combined data exported to: {combined_output_path}")
+```
 
-    # Remove df1 and df2 cols from current position
-    for col in df1_cols + df2_cols:
-        if col in cols:
-            cols.remove(col)
+New lines:
+```python
+# Create paths for schema and knowledge files
+schema_output_path = f"{output_path}schema.csv"
+knowledge_output_path = f"{output_path}knowledge.csv"
 
-    # Find the index of metadata_id
-    metadata_index = cols.index('metadata_id') + 1
+# Separate data based on metadata_type
+knowledge_df = combined_df[combined_df['metadata_type'] == 'knowledge']
+schema_df = combined_df[combined_df['metadata_type'].isin(['few_shot', 'meta', 'values'])]
 
-    # Insert df1 and df2 cols (preserving order) after metadata_id
-    cols = cols[:metadata_index] + df1_cols + df2_cols + cols[metadata_index:]
+# Export schema dataframe
+schema_df.to_csv(schema_output_path, index=False, sep='|')
+print(f"Schema data exported to: {schema_output_path}")
 
-    # Reorder the DataFrame
-    combined_df = combined_df[cols]
+# Export knowledge dataframe
+knowledge_df.to_csv(knowledge_output_path, index=False, sep='|')
+print(f"Knowledge data exported to: {knowledge_output_path}")
+```
 
-    # Save to CSV
-    combined_df.to_csv(combined_output_path, index=False)
+This will:
+1. Create two fixed filenames: "schema.csv" and "knowledge.csv" in the output directory
+2. Filter the combined dataframe by "metadata_type" values
+3. Save "knowledge" data to knowledge.csv
+4. Save "few_shot", "meta", and "values" data to schema.csv
+5. Use the '|' separator as in your original code​​​​​​​​​​​​​​​​
