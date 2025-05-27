@@ -14,7 +14,7 @@ async def process_data(request: Request):
         logger.info("Loading config")
         config = DataProcessor().load_config("configs/config.yml")
 
-        # Get filename from request query or body
+        # Get filename from request body
         body = await request.json()
         filename = body.get("filename")
         if not filename:
@@ -23,13 +23,21 @@ async def process_data(request: Request):
         # S3 setup
         s3 = S3Utils(config['s3_details'])
 
-        # Check if file exists in S3
-        input_path_meta = config['s3_file_paths']['input_data_path_meta']
-        full_file_path = os.path.join(input_path_meta, filename)
-        file_list = s3.list_objects(input_path_meta)
+        # Define the folders to check
+        folders_to_check = {
+            "meta": config['s3_file_paths']['input_data_path_meta'],
+            "knowledge": config['s3_file_paths']['input_data_path_kb']
+        }
 
-        if full_file_path not in file_list:
-            raise HTTPException(status_code=404, detail=f"File {filename} not found in S3")
+        # Check file existence in both folders
+        for folder_name, s3_path in folders_to_check.items():
+            file_list = s3.list_objects(s3_path)
+            full_file_path = os.path.join(s3_path, filename)
+            if full_file_path not in file_list:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"File '{filename}' not found in S3 '{folder_name}' folder"
+                )
 
         # Check if file already processed
         processed_files_path = os.path.join(config['paths']['output'], 'processed_files.json')
@@ -41,15 +49,14 @@ async def process_data(request: Request):
         if filename in processed_files:
             raise HTTPException(status_code=400, detail=f"File {filename} already processed")
 
-        # Download file
-        input_directory_meta = config["paths"].get("input_directory_meta", "assets/meta/")
-        os.makedirs(input_directory_meta, exist_ok=True)
-        local_file_path = os.path.join(input_directory_meta, filename)
-        s3.download_file(full_file_path, local_file_path)
-        logger.info(f"Downloaded file: {filename}")
-
-        # (Optional) Handle few_shot, values, and knowledge base as before
-        # You can keep existing logic to download those
+        # Download files from both folders
+        for folder_name, s3_path in folders_to_check.items():
+            local_dir = config["paths"].get(f"input_directory_{folder_name}", f"assets/{folder_name}/")
+            os.makedirs(local_dir, exist_ok=True)
+            local_file_path = os.path.join(local_dir, filename)
+            full_file_path = os.path.join(s3_path, filename)
+            s3.download_file(full_file_path, local_file_path)
+            logger.info(f"Downloaded {folder_name} file: {filename}")
 
         # Run preprocessing
         preprocessing_main()
@@ -60,14 +67,21 @@ async def process_data(request: Request):
         with open(processed_files_path, 'w') as f:
             json.dump(processed_files, f)
 
-        # Archive file
-        s3_archive_folder_meta = config['s3_file_paths']['archive_data_path_meta']
-        s3.move_objects_with_timestamp(input_path_meta, s3_archive_folder_meta, [filename])
-        logger.info(f"Archived file: {filename}")
+        # Archive files from meta and knowledge
+        archive_paths = {
+            "meta": config['s3_file_paths']['archive_data_path_meta'],
+            "knowledge": config['s3_file_paths']['archive_data_path_kb']
+        }
+
+        for folder_name in folders_to_check.keys():
+            input_path = folders_to_check[folder_name]
+            archive_path = archive_paths[folder_name]
+            s3.move_objects_with_timestamp(input_path, archive_path, [filename])
+            logger.info(f"Archived {folder_name} file: {filename}")
 
         return {
             "status": "success",
-            "message": f"File {filename} processed successfully",
+            "message": f"File {filename} processed successfully from both meta and knowledge",
             "processed_file": filename
         }
 
