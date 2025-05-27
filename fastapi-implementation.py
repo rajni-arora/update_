@@ -1,16 +1,26 @@
-✅ Key User Stories & Accomplishments
-	1.	Integration of Indexing Pipeline into Pre-Processing
-	•	Refactored the existing pre-processing pipeline to seamlessly invoke the indexing pipeline as a downstream step.
-	•	Ensures that new or updated data is not only cleaned and transformed but also automatically pushed for indexing, streamlining end-to-end data flow.
-	2.	Payload Format & Schema Update
-	•	Updated the payload structure to match new requirements, including changes to the expected schema.
-	•	Modified embedding generation logic and its structure to better support enhanced search relevance and model compatibility.
-	3.	Sensitive Data Handling – Redaction & Encryption
-	•	Applied robust redaction and encryption logic to sensitive fields in the pre-processing stage.
-	•	Ensured compliance with data privacy standards and improved trust in data handling within the pipeline.
-	4.	Testing & Deployment on Hydra
-	•	Conducted comprehensive unit and integration testing for the revised pre-processing logic.
-	•	Successfully deployed the pipeline onto Hydra, ensuring it runs reliably in production with monitoring hooks.
-	5.	Data Upload to Data Stacks
-	•	Uploaded newly prepared and processed data into Data Stacks, making it available for downstream analytics and search pipelines.
-	•	Verified schema consistency and ingestion success post-upload.
+import os
+
+# ... (rest of your existing code)
+
+if response_indexing.status_code != 200:
+    raise Exception(status_code=response_indexing.status_code, detail=response_indexing.json())
+else:
+    logger.info(f"Indexing successful. Response:\n{response_indexing.json()}")
+    
+    # Delete the file after successful indexing
+    try:
+        os.remove(file_path)
+        logger.info(f"Deleted file after successful indexing: {file_path}")
+    except Exception as e:
+        logger.error(f"Failed to delete file ({file_path}): {e}")
+    
+    # Delete all files in the output directory
+    try:
+        output_dir = os.path.dirname(file_path)
+        for file in os.listdir(output_dir):
+            full_path = os.path.join(output_dir, file)
+            if os.path.isfile(full_path):
+                os.remove(full_path)
+                logger.info(f"Deleted file: {full_path}")
+    except Exception as e:
+        logger.error(f"Failed to delete files in directory {output_dir}: {e}")
