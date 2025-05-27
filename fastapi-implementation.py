@@ -1,33 +1,76 @@
+from fastapi import FastAPI, HTTPException, Request
+import os, json, logging
+from utils.s3_utils import S3Utils
+from utils.data_processor import DataProcessor
+from preprocessing import preprocessing_main
 
-Hi Manoj,
+app = FastAPI()
+logger = logging.getLogger("uvicorn")
 
-I wanted to give you an update on the changes I’ve been working on for the /process-data/ API and the current status.
+@app.post("/process-data/")
+async def process_data(request: Request):
+    try:
+        # Load config
+        logger.info("Loading config")
+        config = DataProcessor().load_config("configs/config.yml")
 
-Summary of Changes from Old Code to New Code:
-	•	Single File Processing:
-Previously, the code processed all files from the S3 input directories in batch. Now, the API accepts a single filename via the request payload and processes only that specific file. This approach is more efficient and safer for incremental data ingestion.
-	•	File Existence and Duplicate Checks:
-The new code verifies if the requested file exists in S3 and also checks if it has already been processed (tracked via a local processed_files.json). If the file is already processed or not found, the API returns an appropriate error instead of reprocessing or failing silently.
-	•	Downloading Files:
-Instead of downloading entire directories, the updated code downloads only the specified file from S3 to the local machine for processing.
-	•	Archiving Logic:
-The original code’s move_objects_with_timestamp method is designed to move entire directories at once. However, now we need to move or archive individual files after processing. This requires either modifying the existing method to accept a list of files or creating a new utility function to move single files. This is a key point that needs careful handling to avoid unintended side effects.
-	•	Processing Flow:
-The existing preprocessing logic remains intact, but now it works on a single file basis, which aligns better with our use case for incremental data updates.
+        # Get filename from request query or body
+        body = await request.json()
+        filename = body.get("filename")
+        if not filename:
+            raise HTTPException(status_code=400, detail="Filename is required in the request body")
 
-⸻
+        # S3 setup
+        s3 = S3Utils(config['s3_details'])
 
-Current Status:
-	•	I have implemented these changes and am currently debugging the code locally.
-	•	Since the archive/move function for single files needs some adjustment, I want to avoid rushing the deployment to production to prevent any potential disruptions.
-	•	To keep the pipeline moving and allow users to continue ingesting data, I plan to temporarily continue using the existing service as-is for ingestion.
-	•	Meanwhile, I will thoroughly test the new implementation locally and update the archive logic to safely handle single files.
-	•	Once testing is complete and stable, I will push the changes for deployment.
+        # Check if file exists in S3
+        input_path_meta = config['s3_file_paths']['input_data_path_meta']
+        full_file_path = os.path.join(input_path_meta, filename)
+        file_list = s3.list_objects(input_path_meta)
 
-⸻
+        if full_file_path not in file_list:
+            raise HTTPException(status_code=404, detail=f"File {filename} not found in S3")
 
-Request:
+        # Check if file already processed
+        processed_files_path = os.path.join(config['paths']['output'], 'processed_files.json')
+        processed_files = []
+        if os.path.exists(processed_files_path):
+            with open(processed_files_path, 'r') as f:
+                processed_files = json.load(f)
 
-Could you please allow me some additional time to complete this testing and the necessary updates? This way, we can ensure a smooth transition without affecting current users or data integrity.
+        if filename in processed_files:
+            raise HTTPException(status_code=400, detail=f"File {filename} already processed")
 
-Thank you for your understanding. Please let me know if you want me to share any specific logs or details.
+        # Download file
+        input_directory_meta = config["paths"].get("input_directory_meta", "assets/meta/")
+        os.makedirs(input_directory_meta, exist_ok=True)
+        local_file_path = os.path.join(input_directory_meta, filename)
+        s3.download_file(full_file_path, local_file_path)
+        logger.info(f"Downloaded file: {filename}")
+
+        # (Optional) Handle few_shot, values, and knowledge base as before
+        # You can keep existing logic to download those
+
+        # Run preprocessing
+        preprocessing_main()
+        logger.info("Preprocessing completed")
+
+        # Mark file as processed
+        processed_files.append(filename)
+        with open(processed_files_path, 'w') as f:
+            json.dump(processed_files, f)
+
+        # Archive file
+        s3_archive_folder_meta = config['s3_file_paths']['archive_data_path_meta']
+        s3.move_objects_with_timestamp(input_path_meta, s3_archive_folder_meta, [filename])
+        logger.info(f"Archived file: {filename}")
+
+        return {
+            "status": "success",
+            "message": f"File {filename} processed successfully",
+            "processed_file": filename
+        }
+
+    except Exception as e:
+        logger.error(f"Error in process_data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
