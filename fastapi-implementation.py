@@ -1,44 +1,46 @@
-import os
-from datetime import datetime
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint import MemorySaver
 
-async def data_ingestion():
-    app_env = "e1"
-    config_path = f'configs/config_{app_env}.yml'
-    print(config_path)
+# 1. Define state
+class RewriteState(dict):
+    # Input: query, config, knowledge_base_qr, etc.
+    pass
 
-    # Load config
-    logger.info("Configuration Loading")
-    config = DataProcessor().load_config(config_path)
-    secrets_to_env(config)
-    logger.info("Config loaded successfully")
+# 2. Define the single QueryRewrite node
+def query_rewrite_node(state):
+    from services.query_rewrite.query_rewrite import QueryRewriteOrchestrator
 
-    s3 = S3Utils(config['s3_details'])
+    qr_service = QueryRewriteOrchestrator(state["config"])
+    qr_response, qr_prompt = qr_service.query_rewrite_main(
+        query=state["query"],
+        knowledge_base_qr=state["knowledge_base_qr"],
+        dynamic_examples=state["dynamic_examples"]
+    )
 
-    # Get current timestamp for file naming
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    state.update({
+        "rewritten_query": qr_response,
+        "final_qr_prompt": qr_prompt
+    })
+    return state
 
-    local_assets_path = "assets/"
-    s3_assets_path = config['s3_file_paths']['s3_assets_upload_path']
-    s3_archive_path = config['s3_file_paths']['archive_data_path']
+# 3. Build graph with just one node
+graph = StateGraph(RewriteState)
 
-    # Folders where timestamp should be added
-    timestamped_folders = {"meta", "values", "knowledge"}
+graph.add_node("QueryRewrite", query_rewrite_node)
+graph.set_entry_point("QueryRewrite")
+graph.add_edge("QueryRewrite", END)
 
-    for root, dirs, files in os.walk(local_assets_path):
-        for file in files:
-            local_file_path = os.path.join(root, file).replace("\\", "/")
-            relative_path = local_file_path.replace(local_assets_path, "")
-            folder_name = relative_path.split('/')[0]
+# 4. Compile
+query_rewrite_graph = graph.compile()
 
-            # Construct S3 key
-            if folder_name in timestamped_folders:
-                file_name, file_ext = os.path.splitext(os.path.basename(file))
-                timestamped_filename = f"{file_name}_{timestamp}{file_ext}"
-                folder_path = os.path.dirname(relative_path)
-                s3_archive_key = f"{s3_archive_path}/{folder_path}/{timestamped_filename}"
-            else:
-                # Upload as-is for non-timestamp folders (like 'others')
-                s3_archive_key = f"{s3_archive_path}/{relative_path}"
+# 5. Example usage
+if __name__ == "__main__":
+    input_state = RewriteState({
+        "query": "What is Gleam used for?",
+        "knowledge_base_qr": ...,       # Replace with actual
+        "dynamic_examples": ...,        # Replace with actual
+        "config": ...                   # Replace with actual
+    })
 
-            print(f"Archiving: {s3_archive_key}")
-            s3.upload_file(local_file_path, s3_archive_key)
+    final_state = query_rewrite_graph.invoke(input_state)
+    print("Rewritten Query:", final_state["rewritten_query"])
