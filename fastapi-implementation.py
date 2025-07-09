@@ -1,46 +1,36 @@
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint import MemorySaver
 
-# 1. Define state
-class RewriteState(dict):
-    # Input: query, config, knowledge_base_qr, etc.
-    pass
-
-# 2. Define the single QueryRewrite node
+# Step 1: Define your node function
 def query_rewrite_node(state):
-    from services.query_rewrite.query_rewrite import QueryRewriteOrchestrator
+    query = state["query"]
+    print(f"📥 Input Query: {query}")
 
-    qr_service = QueryRewriteOrchestrator(state["config"])
-    qr_response, qr_prompt = qr_service.query_rewrite_main(
-        query=state["query"],
-        knowledge_base_qr=state["knowledge_base_qr"],
-        dynamic_examples=state["dynamic_examples"]
-    )
+    # Example rewrite logic (replace with your actual logic)
+    rewritten_query = query.replace("Get", "Retrieve")
 
-    state.update({
-        "rewritten_query": qr_response,
-        "final_qr_prompt": qr_prompt
-    })
-    return state
+    print(f"📤 Rewritten Query: {rewritten_query}")
 
-# 3. Build graph with just one node
-graph = StateGraph(RewriteState)
+    # Must return a dict with at least one key matching the state schema
+    return {"rewritten_query": rewritten_query}
 
-graph.add_node("QueryRewrite", query_rewrite_node)
-graph.set_entry_point("QueryRewrite")
-graph.add_edge("QueryRewrite", END)
+# Step 2: Define the state schema with output key(s)
+builder = StateGraph(state_schema={
+    "query": str,
+    "rewritten_query": str
+})
 
-# 4. Compile
-query_rewrite_graph = graph.compile()
+# Step 3: Add node, entry point, and edge to END
+builder.add_node("QueryRewrite", query_rewrite_node)
+builder.set_entry_point("QueryRewrite")
+builder.add_edge("QueryRewrite", END)
 
-# 5. Example usage
-if __name__ == "__main__":
-    input_state = RewriteState({
-        "query": "What is Gleam used for?",
-        "knowledge_base_qr": ...,       # Replace with actual
-        "dynamic_examples": ...,        # Replace with actual
-        "config": ...                   # Replace with actual
-    })
+# Step 4: Compile the graph
+graph = builder.compile()
 
-    final_state = query_rewrite_graph.invoke(input_state)
-    print("Rewritten Query:", final_state["rewritten_query"])
+# Step 5: Run the graph with input
+result = graph.invoke({
+    "query": "Get amount of adults by product type and country"
+})
+
+# Step 6: Print final output state
+print("✅ Final Updated State:", result)
