@@ -1,37 +1,36 @@
 def get_tripalet(table_name_dict: dict, foreign_key_dict: dict, model_idx: str):
-    from tqdm import tqdm
-    import pandas as pd
-
+    from tqdm import tqdm  # optional: for progress bar
     all_responses = []
+    
+    # Convert to list for slicing
+    data_items = list(table_name_dict.items())
+    
+    batch_size = 50  # You can tune this (10, 20, 100) depending on token usage
+    
+    for i in tqdm(range(0, len(data_items), batch_size)):
+        batch = dict(data_items[i:i+batch_size])
+        
+        # redact the schema
+        redact_schema = {
+            table_name: perform_redact(table_df.to_csv(index=False))
+            for table_name, table_df in batch.items()
+        }
 
-    # Process one table at a time to reduce token usage
-    for table_name, table_df in tqdm(table_name_dict.items()):
+        triple_extraction_prompt = Prompt().triplet_extraction_prompt()
+        
+        input_node = {
+            "schema_dict": redact_schema,
+            "foreign_key_dict": foreign_key_dict
+        }
 
-        # Process large tables in row batches
-        batch_size = 50  # Adjust this to control token usage
-
-        for i in range(0, len(table_df), batch_size):
-            row_batch_df = table_df.iloc[i:i+batch_size]
-
-            # redact
-            try:
-                redacted_schema = {table_name: perform_redact(row_batch_df.to_csv(index=False))}
-
-                triple_extraction_prompt = Prompt  # Fix based on your setup
-                input_node = {
-                    "schema_dict": redacted_schema,
-                    "foreign_key_dict": foreign_key_dict
-                }
-
-                response = model_invoke().model_call(
-                    model_index=model_idx,
-                    instruction_prompt=triple_extraction_prompt,
-                    input_node=input_node
-                )
-
-                all_responses.append(response)
-
-            except Exception as e:
-                print(f"Error on table '{table_name}', rows {i}-{i+batch_size}: {e}")
+        try:
+            response = model_invoke().model_call(
+                model_index=model_idx,
+                instruction_prompt=triple_extraction_prompt,
+                input_node=input_node
+            )
+            all_responses.append(response)
+        except Exception as e:
+            print(f"Error processing batch {i}-{i+batch_size}: {e}")
     
     return all_responses
