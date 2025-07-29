@@ -1,41 +1,21 @@
-from typing import Dict
+all_triples = []
 
-def get_tripalet_loopwise(table_name_dict: Dict, foreign_key_dict, model_idx):
-    final_response = []
+for table_name, table_df in schema_table_dict.items():
+    # Prepare just one table
+    sub_table_dict = {table_name: table_df}
 
-    # Convert foreign key dict to DataFrame if not already
-    if not isinstance(foreign_key_dict, pd.DataFrame):
-        print("foreign_key_dict should be a pandas DataFrame with columns: table1, column1, table2, column2")
-        return
+    # Filter relevant foreign keys only for that table (optional optimization)
+    sub_fk_dict = {
+        k: v for k, v in foreign_key_dict.items()
+        if table_name in v or k.startswith(table_name)
+    }
 
-    # Iterate row-by-row through foreign key mappings
-    for idx, row in foreign_key_dict.iterrows():
-        table1 = row['table1']
-        table2 = row['table2']
-
-        if table1 not in table_name_dict or table2 not in table_name_dict:
-            continue  # Skip if any table not present
-
-        # Redact schema for both involved tables
-        redact_schema = {
-            table1: perform_redact(table_name_dict[table1].to_csv(index=False)),
-            table2: perform_redact(table_name_dict[table2].to_csv(index=False))
-        }
-
-        # Prepare prompt and input
-        triple_extraction_prompt = Prompt().triplate_extraction()
-        input_node = {
-            "schema_dict": redact_schema,
-            "foreign_key_dict": pd.DataFrame([row]).to_dict(orient="records")[0]  # send only current row
-        }
-
-        # Call model
-        response = model_invoke().model_call(
-            model_index=model_idx,
-            instruction_prompt=triple_extraction_prompt,
-            input_node=input_node
-        )
-
-        final_response.append(response)
-
-    return final_response
+    try:
+        print(f"Processing table: {table_name}")
+        triples = get_tripalet(sub_table_dict, sub_fk_dict, model_idx="3")
+        all_triples.append(triples)
+    except Exception as e:
+        print(f"Failed on {table_name} due to {e}")
+        
+        
+final_output = "\n".join(str(t) for t in all_triples)
