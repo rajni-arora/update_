@@ -1,35 +1,41 @@
-def get_triplet_batched(table_name_dict: Dict, foreign_key_dict: Dict, model_idx):
-    all_triplets = []
+from typing import Dict
 
-    for table_name, table_df in table_name_dict.items():
-        # Step 1: Prepare redacted schema for just one table
-        table_csv = table_df.to_csv(index=False)
-        redacted_schema = {table_name: perform_redact(table_csv)}
+def get_tripalet_loopwise(table_name_dict: Dict, foreign_key_dict, model_idx):
+    final_response = []
 
-        # Step 2: Include only relevant FK keys (where this table is source or target)
-        relevant_fks = {
-            k: v for k, v in foreign_key_dict.items()
-            if k == table_name or v["target_table"] == table_name
+    # Convert foreign key dict to DataFrame if not already
+    if not isinstance(foreign_key_dict, pd.DataFrame):
+        print("foreign_key_dict should be a pandas DataFrame with columns: table1, column1, table2, column2")
+        return
+
+    # Iterate row-by-row through foreign key mappings
+    for idx, row in foreign_key_dict.iterrows():
+        table1 = row['table1']
+        table2 = row['table2']
+
+        if table1 not in table_name_dict or table2 not in table_name_dict:
+            continue  # Skip if any table not present
+
+        # Redact schema for both involved tables
+        redact_schema = {
+            table1: perform_redact(table_name_dict[table1].to_csv(index=False)),
+            table2: perform_redact(table_name_dict[table2].to_csv(index=False))
         }
 
-        # Step 3: Prepare prompt and inputs
+        # Prepare prompt and input
         triple_extraction_prompt = Prompt().triplate_extraction()
         input_node = {
-            "schema_dict": redacted_schema,
-            "foreign_key_dict": relevant_fks
+            "schema_dict": redact_schema,
+            "foreign_key_dict": pd.DataFrame([row]).to_dict(orient="records")[0]  # send only current row
         }
 
-        # Step 4: Model Call
+        # Call model
         response = model_invoke().model_call(
             model_index=model_idx,
             instruction_prompt=triple_extraction_prompt,
             input_node=input_node
         )
 
-        # Step 5: Append output to combined result
-        response_text = response.content if hasattr(response, 'content') else response
-        all_triplets.append(response_text.strip())
+        final_response.append(response)
 
-    # Step 6: Merge all triplet texts into one final string
-    final_output = "\n".join(all_triplets)
-    return final_output
+    return final_response
