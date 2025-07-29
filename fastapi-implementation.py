@@ -1,21 +1,42 @@
-all_triples = []
+import networkx as nx
 
-for table_name, table_df in schema_table_dict.items():
-    # Prepare just one table
-    sub_table_dict = {table_name: table_df}
+class CreateGraph:
+    def parse_triples(self, response_string):
+        """
+        Parse the final_output string into a list of (subject, predicate, object) triplets.
+        """
+        if not response_string:
+            return []
 
-    # Filter relevant foreign keys only for that table (optional optimization)
-    sub_fk_dict = {
-        k: v for k, v in foreign_key_dict.items()
-        if table_name in v or k.startswith(table_name)
-    }
+        # Split by '\\n'
+        raw_lines = response_string.strip().split("\\n")
+        triplets = []
 
-    try:
-        print(f"Processing table: {table_name}")
-        triples = get_tripalet(sub_table_dict, sub_fk_dict, model_idx="3")
-        all_triples.append(triples)
-    except Exception as e:
-        print(f"Failed on {table_name} due to {e}")
-        
-        
-final_output = "\n".join(str(t) for t in all_triples)
+        for line in raw_lines:
+            line = line.strip().strip("()`")  # remove surrounding quotes and parentheses
+            if line:
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) == 3:
+                    triplets.append(parts)
+        return triplets
+
+    def create_graph_from_triplets(self, triplets):
+        G = nx.DiGraph()
+        for triplet in triplets:
+            subject, predicate, obj = triplet
+            G.add_edge(subject, obj, label=predicate)
+        return G
+
+    def select_subgraph(self, G, selected_nodes_list):
+        selected_tree = []
+        selected_preorder_nodes = []
+        selected_postorder_nodes = []
+        selected_labeled_edges = []
+
+        for i in selected_nodes_list:
+            selected_tree.append(list(nx.dfs_tree(G, source=i, depth_limit=3)))
+            selected_preorder_nodes.append(list(nx.dfs_preorder_nodes(G, source=i, depth_limit=3)))
+            selected_postorder_nodes.append(list(nx.dfs_postorder_nodes(G, source=i, depth_limit=3)))
+            selected_labeled_edges.append(list(nx.dfs_labeled_edges(G, source=i, depth_limit=3)))
+
+        return selected_tree, selected_preorder_nodes, selected_postorder_nodes, selected_labeled_edges
