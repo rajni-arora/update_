@@ -1,42 +1,11 @@
-import networkx as nx
+I wanted to provide you with an update regarding the issue you reported about the missing column in the E3 environment.
 
-class CreateGraph:
-    def parse_triples(self, response_string):
-        """
-        Parse the final_output string into a list of (subject, predicate, object) triplets.
-        """
-        if not response_string:
-            return []
+I have thoroughly crosschecked the schema file, and I can confirm that the column in question is indeed present in our schema definition. Additionally, I have verified across all environments — E1, E2, and E3 — and the column exists in DataStax for each of them.
 
-        # Split by '\\n'
-        raw_lines = response_string.strip().split("\\n")
-        triplets = []
+To be doubly sure, I tested this locally by running the same query, and the column is showing up correctly in the results. I’ve attached screenshots below to show the results from all three environments — E1, E2, and E3 — for your reference.
 
-        for line in raw_lines:
-            line = line.strip().strip("()`")  # remove surrounding quotes and parentheses
-            if line:
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) == 3:
-                    triplets.append(parts)
-        return triplets
+However, I did notice one behavior in E3 worth mentioning. When I executed the query multiple times, I did not receive data in the first three attempts, but on the fourth attempt, I did get the expected results. This suggests that the semantic retrieval might be behaving inconsistently at times, possibly due to transient factors or load-related variance.
 
-    def create_graph_from_triplets(self, triplets):
-        G = nx.DiGraph()
-        for triplet in triplets:
-            subject, predicate, obj = triplet
-            G.add_edge(subject, obj, label=predicate)
-        return G
+We are continuing to look into this further, but I wanted to share these findings with you in the meantime.
 
-    def select_subgraph(self, G, selected_nodes_list):
-        selected_tree = []
-        selected_preorder_nodes = []
-        selected_postorder_nodes = []
-        selected_labeled_edges = []
-
-        for i in selected_nodes_list:
-            selected_tree.append(list(nx.dfs_tree(G, source=i, depth_limit=3)))
-            selected_preorder_nodes.append(list(nx.dfs_preorder_nodes(G, source=i, depth_limit=3)))
-            selected_postorder_nodes.append(list(nx.dfs_postorder_nodes(G, source=i, depth_limit=3)))
-            selected_labeled_edges.append(list(nx.dfs_labeled_edges(G, source=i, depth_limit=3)))
-
-        return selected_tree, selected_preorder_nodes, selected_postorder_nodes, selected_labeled_edges
+Please feel free to reach out if you have any questions or if there’s anything else you’d like us to check.
