@@ -1,19 +1,9 @@
-from cassandra.cluster import Cluster
-from cassandra.auth import PlainTextAuthProvider
+embedding = data_point["embedding"]
 
-# Setup
-cluster1_nodes = ['127.0.0.1']  # Replace with your actual nodes
-USER_NAME = 'your_username'
-PASSWORD = 'your_password'
-keyspace = 'your_keyspace'
-table_name = 'your_table'
-
-# Connect
-auth_provider = PlainTextAuthProvider(username=USER_NAME, password=PASSWORD)
-cluster = Cluster(cluster1_nodes, auth_provider=auth_provider)
-session = cluster.connect()
-session.set_keyspace(keyspace)
-
-# Drop table
-session.execute(f"DROP TABLE IF EXISTS {keyspace}.{table_name};")
-print(f"Table {keyspace}.{table_name} dropped successfully.")
+# Fix: Ensure vector has exactly 3072 elements
+if len(embedding) < 3072:
+    # Pad with 0.0
+    embedding += [0.0] * (3072 - len(embedding))
+elif len(embedding) > 3072:
+    # Trim extra elements
+    embedding = embedding[:3072]
