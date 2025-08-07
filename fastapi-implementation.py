@@ -1,48 +1,54 @@
-def index_exists(self, index_name):
-    query = f"""
-    SELECT index_name FROM system_schema.indexes 
-    WHERE keyspace_name = '{self.keyspace}' 
-      AND table_name = '{self.table}';
-    """
-    rows = self.session.execute(query)
-    return any(row.index_name == index_name for row in rows)
+def create_index(keyspace: str, table_name: str):
+    # Connect
+    cluster = Cluster(
+        cluster1_nodes,
+        auth_provider=PlainTextAuthProvider(username=USER_NAME, password=PASSWORD)
+    )
+    session = cluster.connect()
+    session.set_keyspace(keyspace)
 
-def drop_index(self, index_name):
-    try:
-        drop_query = f"DROP INDEX IF EXISTS {self.keyspace}.{index_name};"
-        self.session.execute(drop_query)
-        print(f"Dropped existing index: {index_name}")
-    except Exception as e:
-        print(f"Error dropping index {index_name}: {e}")
-
-def create_vector_index(self, vector_column):
-    try:
-        # Connect if session/cluster is down
-        if self.cluster.is_shutdown:
-            self.cluster = Cluster(
-                self.clusternode,
-                auth_provider=PlainTextAuthProvider(username=USER_NAME, password=PASSWORD)
-            )
-        if self.session.is_shutdown:
-            self.session = self.cluster.connect()
-            self.session.set_keyspace(self.keyspace)
-
-        # Build index name
-        index_name = f"ann_index_{vector_column}"
-
-        # Drop index if exists
-        if self.index_exists(index_name):
-            self.drop_index(index_name)
-
-        # Create index
-        index_query = f"""
-        CREATE CUSTOM INDEX {index_name}
-        ON {self.table} ({vector_column})
-        USING 'StorageAttachedIndex'
-        WITH OPTIONS = {{ 'similarity_function': 'COSINE' }};
+    # Helper function to drop index safely
+    def drop_if_exists(index_name):
+        check_query = f"""
+        SELECT index_name FROM system_schema.indexes
+        WHERE keyspace_name = '{keyspace}' AND table_name = '{table_name}';
         """
-        self.session.execute(index_query)
-        print(f"Created new index: {index_name}")
+        rows = session.execute(check_query)
+        if any(row.index_name == index_name for row in rows):
+            session.execute(f"DROP INDEX IF EXISTS {keyspace}.{index_name};")
+            print(f"Dropped existing index: {index_name}")
 
-    except Exception as e:
-        print(f"Error creating index: {e}")
+    # Index creation queries
+    index_queries = {
+        f"{table_name}_entry_sai": f"""
+            CREATE CUSTOM INDEX {table_name}_entry_sai
+            ON {table_name} (entries['mtd_vl_tx'])
+            USING 'StorageAttachedIndex';
+        """,
+        f"{table_name}_key_sai": f"""
+            CREATE CUSTOM INDEX {table_name}_key_sai
+            ON {table_name} (keys['mtd_vl_tx'])
+            USING 'StorageAttachedIndex';
+        """,
+        f"{table_name}_value_sai": f"""
+            CREATE CUSTOM INDEX {table_name}_value_sai
+            ON {table_name} (values['mtd_vl_tx'])
+            USING 'StorageAttachedIndex';
+        """,
+        f"{table_name}_vector_sai": f"""
+            CREATE CUSTOM INDEX {table_name}_vector_sai
+            ON {table_name} (vctr_d)
+            USING 'StorageAttachedIndex';
+        """,
+        f"{table_name}_usecase_id_sai": f"""
+            CREATE CUSTOM INDEX {table_name}_usecase_id_sai
+            ON {table_name} (us_cs_id)
+            USING 'StorageAttachedIndex';
+        """
+    }
+
+    # Drop if exists and then create
+    for index_name, query in index_queries.items():
+        drop_if_exists(index_name)
+        session.execute(query)
+        print(f"Created index: {index_name}")
