@@ -1,57 +1,38 @@
-The function knowledge_recall is responsible for retrieving relevant knowledge snippets and examples given a user’s question.
-It combines semantic search results (already computed and passed in) with TF-IDF keyword search, filters them, deduplicates them, and finally builds:
-	1.	A knowledge representation string (kg_repr)
-	2.	A dynamic examples string (dynamic_examples_repr)
+🔎 Why knowledge_recall is needed
 
-These outputs are later injected into your query rewrite prompt.
+When you rewrite a user’s query (with LLM), you don’t want the model to work blindly.
+You want it to see relevant knowledge and examples from your system so that the rewrite is:
+	•	Accurate (uses the right domain/business context)
+	•	Grounded (not hallucinated)
+	•	Consistent (uses the same examples/terminology as the KB)
 
-⸻
-
-🛠️ Inputs
-
-knowledge_recall(qn, k1=3, threshold_k1=0.49, k2=4, docs_knowledge_meta=None, docs_knowledge_full=None, knowledge_base=None, dynamic_examples=None, knowledge=None)
-	1.	qn → The user’s query (string).
-	2.	k1 → Number of top results to keep from semantic search.
-	3.	threshold_k1 → Confidence threshold for semantic search hits.
-	4.	k2 → Number of top results to fetch in TF-IDF keyword search.
-	5.	docs_knowledge_meta → Set of “meta” documents (usually titles).
-	6.	docs_knowledge_full → Set of “full” documents (descriptions).
-	7.	knowledge_base → A dictionary containing structured knowledge (e.g., {title: {description: ..., example: ...}}).
-	8.	dynamic_examples → Dictionary mapping example IDs → actual example text.
-	9.	knowledge → Semantic search results (list of dicts with page_content + metadata).
+That’s exactly what knowledge_recall is doing: it prepares the evidence/context for the LLM before you inject it into the prompt.
 
 ⸻
 
-📤 Outputs
+🎯 Goals of knowledge_recall
+	1.	Bring in relevant knowledge
+	•	From semantic search (captures meaning similarity)
+	•	From TF-IDF keyword search (captures exact keyword matches)
+	•	This hybrid recall improves recall (coverage) and precision (relevance).
+	2.	Deduplicate & Clean
+	•	Avoid redundant knowledge snippets.
+	•	Normalize whitespace and text so comparison is consistent.
+	3.	Prepare Few-Shot Examples
+	•	Dynamically fetch examples tied to the recalled knowledge.
+	•	These are injected as few-shot prompts, helping the LLM learn how to rewrite queries correctly.
+	4.	Output in Model-Readable Format
+	•	Stitch the results into two neat strings:
+	•	kg_repr: the recalled domain knowledge.
+	•	dynamic_examples_repr: related examples.
 
-The function returns a tuple:
-	1.	kg_repr → A single string that contains all relevant knowledge snippets (joined with newlines).
-	2.	dynamic_examples_repr → A single string that contains all relevant dynamic few-shot examples (joined with newlines).
-
-⸻
-
-⚙️ Processing Steps
-	1.	Semantic Search Recall
-	•	Convert each semantic hit (knowledge) into a Document object.
-	•	Add to a recall list (kg_recall).
-	2.	TF-IDF Keyword Recall
-	•	Run TF-IDF over docs_knowledge_meta (titles) and docs_knowledge_full (descriptions).
-	•	Cross-check matches so only docs whose title appears in both meta and full results are kept.
-	•	Add unique TF-IDF matches into kg_recall.
-	3.	Deduplication
-	•	Normalize text (remove whitespace) so duplicates aren’t added twice.
-	4.	Reordering
-	•	Reverse the final recall list (priority adjustment).
-	5.	Build kg_repr
-	•	Concatenate all recalled page_content separated by blank lines.
-	6.	Select Examples
-	•	For each recalled doc, check if its title exists in knowledge_base.
-	•	If yes, get the linked example field, look up its text in dynamic_examples, and add it to a set (example_sel).
-	•	Deduplicate via set and join them into a single string.
-	7.	Return
-	•	Return (kg_repr, dynamic_examples_repr).
+These strings then slot directly into the prompt template in get_qr_prompt.
 
 ⸻
 
-✅ In short:
-knowledge_recall = Semantic hits + TF-IDF hits → cleaned + deduped → stitched into one knowledge string + one example string.
+🔗 Where it fits
+
+👉 User query → knowledge_recall → get_qr_prompt → invoke_query_llm → rewritten query
+
+So without knowledge_recall, your LLM would only see the raw query, without context or examples.
+That would lead to weak, less accurate, and less controlled rewrites.
