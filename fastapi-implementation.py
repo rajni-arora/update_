@@ -1,9 +1,10 @@
 import os
 import yaml
 import re
+import json
 import logging
 from dotenv import load_dotenv
-from utils.llm import LLMService   # assumes you have this util class
+from utils.llm import LLMService   # you already have this util
 
 # ----------------------
 # Setup logging
@@ -14,8 +15,8 @@ logger = logging.getLogger(__name__)
 # ----------------------
 # Load environment variables
 # ----------------------
-load_dotenv()   # this will read your .env file (API keys etc.)
-# Example: os.getenv("OPENAI_API_KEY")
+load_dotenv()   # reads .env file
+# Example: OPENAI_API_KEY is now available via os.getenv("OPENAI_API_KEY")
 
 # ----------------------
 # Load config from YAML
@@ -27,24 +28,32 @@ def load_config(config_path: str):
 # ----------------------
 # Invoke LLM Chain
 # ----------------------
-def invoke_query_llm(config, rewrite_prompt: str):
+def invoke_query_llm(config, input_json: dict):
     """
     Invokes LLM for query rewrite and returns raw response
     """
     llm_service = LLMService(config)
+
+    # Extract the prompt from JSON
+    rewrite_prompt = input_json.get("prompt", "")
+
     response = llm_service.invoke_llm_chain(user_prompt=rewrite_prompt)
     return response
 
 # ----------------------
 # Generate Query Rewrite Response
 # ----------------------
-def generate_qr_response(config, qr_prompt: str):
+def generate_qr_response(config, input_json: dict):
     try:
-        qr_response = invoke_query_llm(config, qr_prompt)
+        qr_response = invoke_query_llm(config, input_json)
         logger.info("LLM call completed for query rewrite")
 
-        # Extract "rewritten_query" from LLM response (assuming JSON-like output)
-        final_qr_response = re.findall(r'"rewritten_query"\s*:\s*"([^"]+)"', qr_response)[0]
+        # Try to extract rewritten_query if returned in JSON-like format
+        final_qr_response = None
+        try:
+            final_qr_response = re.findall(r'"rewritten_query"\s*:\s*"([^"]+)"', qr_response)[0]
+        except Exception:
+            logger.warning("Could not extract `rewritten_query` field. Returning raw response.")
 
         return qr_response, final_qr_response
     except Exception as e:
@@ -61,11 +70,14 @@ if __name__ == "__main__":
     # Load config
     config = load_config(config_path)
 
-    # Example input JSON with prompt
-    qr_prompt = '{"prompt": "Convert code into key-value pairs"}'
+    # Example JSON input (your extracted PDF content will go in "content")
+    input_json = {
+        "prompt": "Convert the following PDF text into key-value pairs",
+        "content": "Invoice Number: 12345 Date: 2025-08-28 Customer: John Doe"
+    }
 
     # Run
-    qr_response, final_qr_response = generate_qr_response(config, qr_prompt)
+    qr_response, final_qr_response = generate_qr_response(config, input_json)
 
     print("\n=== Raw LLM Response ===\n", qr_response)
-    print("\n=== Final Extracted Response ===\n", final_qr_response)
+    print("\n=== Final Extracted Response (if found) ===\n", final_qr_response)
