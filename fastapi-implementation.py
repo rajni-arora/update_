@@ -1,38 +1,71 @@
-🔎 Why knowledge_recall is needed
+import os
+import yaml
+import re
+import logging
+from dotenv import load_dotenv
+from utils.llm import LLMService   # assumes you have this util class
 
-When you rewrite a user’s query (with LLM), you don’t want the model to work blindly.
-You want it to see relevant knowledge and examples from your system so that the rewrite is:
-	•	Accurate (uses the right domain/business context)
-	•	Grounded (not hallucinated)
-	•	Consistent (uses the same examples/terminology as the KB)
+# ----------------------
+# Setup logging
+# ----------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-That’s exactly what knowledge_recall is doing: it prepares the evidence/context for the LLM before you inject it into the prompt.
+# ----------------------
+# Load environment variables
+# ----------------------
+load_dotenv()   # this will read your .env file (API keys etc.)
+# Example: os.getenv("OPENAI_API_KEY")
 
-⸻
+# ----------------------
+# Load config from YAML
+# ----------------------
+def load_config(config_path: str):
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
 
-🎯 Goals of knowledge_recall
-	1.	Bring in relevant knowledge
-	•	From semantic search (captures meaning similarity)
-	•	From TF-IDF keyword search (captures exact keyword matches)
-	•	This hybrid recall improves recall (coverage) and precision (relevance).
-	2.	Deduplicate & Clean
-	•	Avoid redundant knowledge snippets.
-	•	Normalize whitespace and text so comparison is consistent.
-	3.	Prepare Few-Shot Examples
-	•	Dynamically fetch examples tied to the recalled knowledge.
-	•	These are injected as few-shot prompts, helping the LLM learn how to rewrite queries correctly.
-	4.	Output in Model-Readable Format
-	•	Stitch the results into two neat strings:
-	•	kg_repr: the recalled domain knowledge.
-	•	dynamic_examples_repr: related examples.
+# ----------------------
+# Invoke LLM Chain
+# ----------------------
+def invoke_query_llm(config, rewrite_prompt: str):
+    """
+    Invokes LLM for query rewrite and returns raw response
+    """
+    llm_service = LLMService(config)
+    response = llm_service.invoke_llm_chain(user_prompt=rewrite_prompt)
+    return response
 
-These strings then slot directly into the prompt template in get_qr_prompt.
+# ----------------------
+# Generate Query Rewrite Response
+# ----------------------
+def generate_qr_response(config, qr_prompt: str):
+    try:
+        qr_response = invoke_query_llm(config, qr_prompt)
+        logger.info("LLM call completed for query rewrite")
 
-⸻
+        # Extract "rewritten_query" from LLM response (assuming JSON-like output)
+        final_qr_response = re.findall(r'"rewritten_query"\s*:\s*"([^"]+)"', qr_response)[0]
 
-🔗 Where it fits
+        return qr_response, final_qr_response
+    except Exception as e:
+        logger.error(f"Error from generate_qr_response: {e}")
+        raise e
 
-👉 User query → knowledge_recall → get_qr_prompt → invoke_query_llm → rewritten query
+# ----------------------
+# Main Execution
+# ----------------------
+if __name__ == "__main__":
+    # Path to your config file
+    config_path = "configs/ai_policy_config.yml"
 
-So without knowledge_recall, your LLM would only see the raw query, without context or examples.
-That would lead to weak, less accurate, and less controlled rewrites.
+    # Load config
+    config = load_config(config_path)
+
+    # Example input JSON with prompt
+    qr_prompt = '{"prompt": "Convert code into key-value pairs"}'
+
+    # Run
+    qr_response, final_qr_response = generate_qr_response(config, qr_prompt)
+
+    print("\n=== Raw LLM Response ===\n", qr_response)
+    print("\n=== Final Extracted Response ===\n", final_qr_response)
