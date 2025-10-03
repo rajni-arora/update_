@@ -1,36 +1,56 @@
-Read “TableNet: Deep Learning model for end-to-end table detection and tabular data extraction from…“ by Sadiva Madaan on Medium: https://sadiva-madaan9.medium.com/tablenet-deep-learning-model-for-end-to-end-table-detection-and-tabular-data-extraction-from-13cb56e93650
+from fastapi import FastAPI
+from pydantic import BaseModel
+import uvicorn
+from openai import OpenAI
 
-pip install torch torchvision opencv-python
+# Initialize OpenAI client (make sure OPENAI_API_KEY is set in your env)
+client = OpenAI()
 
+app = FastAPI()
 
-from pdf2image import convert_from_path
+# Request body schema
+class Query(BaseModel):
+    question: str
 
-pages = convert_from_path("sample.pdf", dpi=300)
-pages[0].save("page1.png", "PNG")
+@app.post("/ask")
+def ask_gpt(query: Query):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1",  # Paid GPT model
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": query.question}
+            ],
+            max_tokens=200
+        )
+        answer = response.choices[0].message.content
+        return {"answer": answer}
+    except Exception as e:
+        return {"error": str(e)}
 
+if __name__ == "__main__":
+    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+    
+    
+    
+    
+    
+import requests
 
-import torch
-import cv2
-from model import TableNet  # custom class from repo
+SERVER_URL = "http://127.0.0.1:8000/ask"
 
-# Load pretrained model
-model = TableNet()
-model.load_state_dict(torch.load("tablenet_pretrained.pth"))
-model.eval()
+def start_client():
+    print("Connected to AI server. Type 'exit' to quit.\n")
+    while True:
+        question = input("You: ")
+        if question.lower() == "exit":
+            break
+        
+        response = requests.post(SERVER_URL, json={"question": question})
+        if response.status_code == 200:
+            print("GPT:", response.json().get("answer"))
+        else:
+            print("Error:", response.text)
 
-# Load image
-img = cv2.imread("page1.png")
-# preprocess (resize, normalize)
-input_tensor = preprocess(img).unsqueeze(0)
-
-# Predict
-with torch.no_grad():
-    table_mask, column_mask = model(input_tensor)
-
-# Post-process masks → get bounding boxes
-table_boxes = mask_to_boxes(table_mask)
-column_lines = mask_to_lines(column_mask)
-
-
-
-
+if __name__ == "__main__":
+    start_client()
