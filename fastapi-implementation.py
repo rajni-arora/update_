@@ -187,6 +187,22 @@ Api key - AIzaSyAp9ulTLwe66fzFd7Yn_LAYW51fQz30uus
 
 
 
+from dotenv import load_dotenv
+import os
+import google.generativeai as genai
+
+load_dotenv()  # load variables from .env file
+
+class GeminiClient:
+    def __init__(self, api_key=None, model="gemini-1.5-flash"):
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
+            raise ValueError("Gemini API key not found. Please set it in .env or environment.")
+        genai.configure(api_key=self.api_key)
+        self.model = model
+
+
+
 
 
 
