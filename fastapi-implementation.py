@@ -202,6 +202,22 @@ class GeminiClient:
         self.model = model
 
 
+updated
+
+import pandas as pd
+
+def load_transactions_csv(path: str) -> pd.DataFrame:
+    """Load transaction data from CSV and ensure 'date' is datetime."""
+    df = pd.read_csv(path)
+    
+    # Convert 'date' column to datetime (force errors to NaT)
+    df["date"] = pd.to_datetime(df["date"], errors="coerce", dayfirst=True)
+    
+    # Drop rows where 'date' could not be parsed
+    df = df.dropna(subset=["date"])
+    
+    return df
+
 
 
 
